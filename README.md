@@ -40,7 +40,7 @@ chmod +x install.sh
 | **Phase 2** | `02_sandbox_docker.sh` | Docker 与 Compose 服务、Bubblewrap (`bwrap.json` 及放行规则) |
 | **Phase 3** | `03_install_agents.sh` | 核心 Coding Agent：Pi (`@earendil-works/pi-coding-agent`)、omp、OpenCode |
 | **Phase 4** | `04_browser_computer_use.sh` | Browser-Use (Python CLI + Pi CDP) 与 Computer-Use Linux 驱动 |
-| **Phase 5** | `05_skills_ssot.sh` | 全局技能库 SSOT：`agent-reach`, `vibeshell`, `loopx`, `herdr-skills` |
+| **Phase 5** | `05_skills_ssot.sh` | 全局技能库 SSOT：`agent-reach`, `vibeshell`, `loopx`, `herdr-skills`，以及针对 Windows/WSL 环境自动判定安装的 `admin-wsl` 与 `windows-wsl-coordination` |
 | **Phase 6** | `06_packages_config.sh` | 严格去重配置包集成、Pi `settings.json` 与代理设置 |
 | **Phase 7** | `07_herdr_setup.sh` | Herdr 多 Agent 终端编排器与状态集成同步 |
 | **Phase 8** | `08_models_config.sh` | 模型配置文件模板初始化 (支持自定义 Provider/Key) |
