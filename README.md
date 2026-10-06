@@ -25,7 +25,7 @@
 ### 1. 网关与服务现状 (2026-10-06 最新)
 - **主网关地址**：`http://155.254.60.38/v1`（Malaysia Debian 12，多出口 Cloudflare WARP 聚合，原生 systemd 监听 `:80`）
 - **韩国服务器状态**：原韩国服务器（`168.93.224.18`）已**永久退役**，所有客户端严禁再连接旧地址。
-- **账号池规模**：**9 个账号**（7 个 RT 存活 + 2 个 RT 已作废并 disable），`max-retry-credentials: 5`（单次请求自动轮询重试最多 5 个账号）。可用 RT 体检：`python3 /root/rt_audit.py`（见 CLIENT-SETUP §12.4）。
+- **账号池规模**：**10 个账号**（8 个 RT 存活 + 2 个 RT 已作废并 disable），`max-retry-credentials: 5`（单次请求自动轮询重试最多 5 个账号）。可用 RT 体检：`python3 /root/rt_audit.py`（见 CLIENT-SETUP §12.4）。
 
 ### 2. 各 Agent 默认模型规范
 | Agent 客户端 | 默认主力模型 | 思考档位 (Thinking) | 额度耗尽 Fallback 降级策略 |

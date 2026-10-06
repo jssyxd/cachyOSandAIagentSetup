@@ -22,7 +22,7 @@
 | **账号池运维** | `/root/cpa/account.sh`（`add` / `list` / `enable` / `disable` / **`key`**）＋ **`/root/cpa/import-cards.sh`**（批量卡密导入 + 逐个定向验证 + 失败自动 `disable`，已用合成卡密跑通）；网关 8 秒热加载；待验证账号链接在 `/root/cpa/verify-urls.txt` |
 | **管理密钥** | ✅ 2026-09-27 **已轮换**：32 位随机密钥存 `/root/cpa/mgmt.key`（600），`account.sh key` 可打印；旧口令 `admin` 已失效（实测 401） |
 | **Web 面板** | ✅ **CPA-Manager-Plus v1.14.1**（原生二进制，`cpa-manager-plus.service`，无 docker）→ `http://155.254.60.38:18317/management.html`；已完成首配（`configured:true / setupRequired:false`），面板侧可读到全部账号；面板 Admin Key 存 `/root/cpamp-admin.key`（600，`/setup` 一次的凭据） |
-| 账号池现状 | **9 个（2026-10-06 更新）**：6 个原有 + 3 个新增（lindasimmons2532、katesmith3181、jamesthompson5969）；面板显示 6 个额度风险（5h 窗口耗尽待恢复）、3 个新号满血可用 |
+| 账号池现状 | **10 个（2026-10-07 更新）**：**8 个正常轮询 + 2 个已 disable**（`katesmith3181`、`jamesthompson5969` 的 RT 已作废）。新增号 `ashleevc70cswanson` 导入前已直连 Google 验 RT = LIVE，导入后实测 3/3 请求 200 |
 | Gemini 系 | ✅ 可用（`gemini-3.8-flash-high` 连打 12/12 全 200，工具调用正常） |
 | Claude / GPT-OSS | ✅ **4.6 系可用**（`claude-sonnet-4-6`、`claude-opus-4-6-thinking`、`gpt-oss-120b-medium` 实测可达）。⚠️ **5.5 系在本池返回 404**（原因见 §0.2）。⚠️ 4.6 系官方 **2026-11-02 下线**，到期须迁移 |
 | **负载均衡（2026-09-27 起）** | `routing.session-affinity: false` —— **按请求轮询**；实测 12 次请求在 2 个健康号上 **6:6**。代价与切换见 §2.6「粘滞 vs 轮询」 |
@@ -42,6 +42,7 @@
 | **2026-09-27（加固轮）** | ① 管理密钥轮换为 32 位随机（`/root/cpa/mgmt.key`，旧 `admin` 失效）；② 重建**出口自愈** `warp-watchdog` + `hap-api.py` + haproxy admin socket，并做了"端口活/隧道死"演练；③ 部署 **CPA-Manager-Plus v1.14.1** 面板（:18317）并完成首配；④ 新增 **`import-cards.sh`** 批量卡密导入器（含定向验证与失败自动 disable），已用合成卡密跑通 |
 | **2026-10-06** | ① 账号池 6 → **9 个**（新增 `lindasimmons2532` / `katesmith3181` / `jamesthompson5969`）；② `max-retry-credentials` 由 `0` 改为 **`5`**；③ omp / pi / opencode 默认模型统一为 Claude 系（用量耗尽自动 fallback 至 `gemini-3.8-flash-high:medium`），hermes 保持 `gemini-3.8-flash-high` |
 | **2026-10-06（修订）** | ① **Claude 5.5 系实测 404** → 全客户端默认回退 **Claude 4.6**（见 §0.2）；② RT 权威审计：9 号中 **7 live / 2 dead**，死号已 `disable`（见 §12.4）；③ 新增 `/root/rt_audit.py` 一键 RT 体检 |
+| **2026-10-07** | 新增账号 **`ashleevc70cswanson@gmail.com`**（池 9 → **10**）。按新流程**先验 RT 再导入**：直连 Google 换取 access_token 成功（LIVE，无轮换）→ `account.sh add` → 网关热加载 → 冒烟 3/3 返回 200 |
 
 ### 0.2 Claude 5.5 系为什么返回 404（2026-10-06 实测）
 
@@ -994,4 +995,30 @@ bash /root/cpa/account.sh disable <email>       # 2) 先停用，避免每轮重
 bash /root/cpa/account.sh enable <email>        # 4) 补录完成后重新启用
 ```
 
-**2026-10-06 审计结果**：9 号中 **7 live / 2 dead** —— `katesmith3181@gmail.com`、`jamesthompson5969@gmail.com` 的 RT 已作废，并已 `disable`。
+**审计结果**：
+
+| 日期 | 池内总数 | live | dead |
+|---|---|---|---|
+| 2026-10-06 | 9 | 7 | 2（`katesmith3181`、`jamesthompson5969`，已 `disable`）|
+| 2026-10-07 | **10** | **8** | 2（同上）|
+
+**新增号的正确导入流程（2026-10-07 固化）**：
+
+```bash
+# 1) 先验 RT（不要直接导入！）—— 直连 Google 换取 access_token
+python3 /root/rt_check.py <email> '<rt>'    # 退出码 0 = LIVE，1 = DEAD
+#    → LIVE 才继续；DEAD 直接找卖家，别污染号池
+
+# 2) 导入 + 热加载
+bash /root/cpa/account.sh add <email> '<rt>'
+
+# 3) 验证：网关已刷出新 access_token 且无 invalid_grant/404
+journalctl -u cli-proxy-api --since '2 minutes ago' | grep <email-prefix>
+
+# 4) 冒烟
+curl -s -m 60 http://127.0.0.1/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}],"max_tokens":4}'
+```
+
+> `/root/rt_check.py` 为**只读**校验工具（不带参数会打印用法），不会修改任何配置；
+> 批量体检整池用 `python3 /root/rt_audit.py`。
