@@ -21,12 +21,12 @@
 | **磁盘/内存自愈** | ✅ `cpa-diskguard.timer`（每 5 分钟；`/` >85% 清日志/转储/journal）＋ **`cpa-memguard.timer`（每 2 分钟；RSS >600MB 重启网关）**；网关另有 `MemoryHigh=480M / MemoryMax=680M` drop-in |
 | **账号池运维** | `/root/cpa/account.sh`（`add` / `list` / `enable` / `disable` / **`key`**）＋ **`/root/cpa/import-cards.sh`**（批量卡密导入 + 逐个定向验证 + 失败自动 `disable`，已用合成卡密跑通）；网关 8 秒热加载；待验证账号链接在 `/root/cpa/verify-urls.txt` |
 | **管理密钥** | ✅ 2026-09-27 **已轮换**：32 位随机密钥存 `/root/cpa/mgmt.key`（600），`account.sh key` 可打印；旧口令 `admin` 已失效（实测 401） |
-| **Web 面板** | ✅ **CPA-Manager-Plus v1.14.1**（原生二进制，`cpa-manager-plus.service`，无 docker）→ `http://155.254.60.38:18317/management.html`；已完成首配（`configured:true / setupRequired:false`），面板侧可读到 4 个账号；面板 Admin Key 存 `/root/cpamp-admin.key`（600，`/setup` 一次的凭据） |
+| **Web 面板** | ✅ **CPA-Manager-Plus v1.14.1**（原生二进制，`cpa-manager-plus.service`，无 docker）→ `http://155.254.60.38:18317/management.html`；已完成首配（`configured:true / setupRequired:false`），面板侧可读到全部账号；面板 Admin Key 存 `/root/cpamp-admin.key`（600，`/setup` 一次的凭据） |
 | 账号池现状 | **9 个（2026-10-06 更新）**：6 个原有 + 3 个新增（lindasimmons2532、katesmith3181、jamesthompson5969）；面板显示 6 个额度风险（5h 窗口耗尽待恢复）、3 个新号满血可用 |
 | Gemini 系 | ✅ 可用（`gemini-3.8-flash-high` 连打 12/12 全 200，工具调用正常） |
-| Claude / GPT-OSS | ✅ 可用（`claude-sonnet-5-5-high`、`claude-opus-5-5-high`、`gpt-oss-120b-medium` 实测 200；4.6 系列已下线）。单个账号可带 `excluded_models` 屏蔽某系 |
+| Claude / GPT-OSS | ✅ **4.6 系可用**（`claude-sonnet-4-6`、`claude-opus-4-6-thinking`、`gpt-oss-120b-medium` 实测可达）。⚠️ **5.5 系在本池返回 404**（原因见 §0.2）。⚠️ 4.6 系官方 **2026-11-02 下线**，到期须迁移 |
 | **负载均衡（2026-09-27 起）** | `routing.session-affinity: false` —— **按请求轮询**；实测 12 次请求在 2 个健康号上 **6:6**。代价与切换见 §2.6「粘滞 vs 轮询」 |
-| **默认模型（2026-10-06 起）** | **omp / pi / opencode → `antigravity/claude-sonnet-5-5-high:medium`（默认）；用量耗尽自动 fallback 至 `gemini-3.8-flash-high:medium`（需设置思考档位时用 medium）**；**hermes → `antigravity/gemini-3.8-flash-high`**（不设 thinking，直接走 Gemini 池）|
+| **默认模型（2026-10-06 修订）** | **omp / pi / opencode → `antigravity/claude-sonnet-4-6`（默认，思考档由 `defaultThinkingLevel: medium` 全局控制）；用量耗尽自动 fallback 至 `gemini-3.8-flash-high:medium`**；**hermes → `antigravity/gemini-3.8-flash-high`**（不设 thinking，直接走 Gemini 池）|
 | 上下文窗口（防配额打爆） | omp `models.yml` 保持 1M **但压缩阈值写死 20 万**（`settings.json.compaction.thresholdTokens`）；pi/opencode 的 gemini 系**声明窗口已从 1M 降到 25 万**，强制在 ~21 万自动压缩（实测长会话 443K→245K、403K→68.5K） |
 | 网关自带 UI | 另有一套网关**原生** `management.html`（`http://155.254.60.38/management.html`，用 CPA 管理密钥登录）：轻量、只连本机网关，与上面独立的 CPA-Manager-Plus 面板互补 |
 | **一键排障** | `bash /root/cpa/account.sh list`（账号）；`systemctl list-timers 'cpa-*' 'warp-watchdog.timer'`；`journalctl -u cli-proxy-api -t warp-watchdog -t cpa-diskguard -t cpa-memguard`；面板 `http://155.254.60.38:18317/management.html`；密钥 `account.sh key` / `/root/cpamp-admin.key` |
@@ -40,6 +40,34 @@
 | 2026-09-23 | omp 通道治理（402 / `Unable to connect`）：`modelRoles` 显式化 + `retry.fallbackChains`（§3.2、§10） |
 | **2026-09-27** | **服务器被重装**（CPA/WARP/haproxy 全丢）→ 按 §2.14 重建并验收；新增 `cpa-memguard`；`session-affinity` 改为 `false`（按请求负载均衡）；两个账号被 Google 判需验证并停用；确认网关三套 API（OpenAI / Anthropic / Responses）均可用 |
 | **2026-09-27（加固轮）** | ① 管理密钥轮换为 32 位随机（`/root/cpa/mgmt.key`，旧 `admin` 失效）；② 重建**出口自愈** `warp-watchdog` + `hap-api.py` + haproxy admin socket，并做了"端口活/隧道死"演练；③ 部署 **CPA-Manager-Plus v1.14.1** 面板（:18317）并完成首配；④ 新增 **`import-cards.sh`** 批量卡密导入器（含定向验证与失败自动 disable），已用合成卡密跑通 |
+| **2026-10-06** | ① 账号池 6 → **9 个**（新增 `lindasimmons2532` / `katesmith3181` / `jamesthompson5969`）；② `max-retry-credentials` 由 `0` 改为 **`5`**；③ omp / pi / opencode 默认模型统一为 Claude 系（用量耗尽自动 fallback 至 `gemini-3.8-flash-high:medium`），hermes 保持 `gemini-3.8-flash-high` |
+| **2026-10-06（修订）** | ① **Claude 5.5 系实测 404** → 全客户端默认回退 **Claude 4.6**（见 §0.2）；② RT 权威审计：9 号中 **7 live / 2 dead**，死号已 `disable`（见 §12.4）；③ 新增 `/root/rt_audit.py` 一键 RT 体检 |
+
+### 0.2 Claude 5.5 系为什么返回 404（2026-10-06 实测）
+
+官方可用性矩阵（<https://antigravity.google/docs/models>）：
+
+| 模型 | Free / AI Plus | Google AI Pro | Google AI Ultra | Enterprise |
+|---|---|---|---|---|
+| Claude Sonnet 5.5 / Opus 5.5 | ❌ | ✅\*\* | ✅ | ❌ |
+| Claude Sonnet 4.6 / Opus 4.6 | ✅ | ✅ | ❌ | ❌ |
+
+> \*\* **Available on Google AI Pro for non-trial subscriptions only** —— 本池的号是 **Pro 试用**，因此 5.5 系对它们**不可用**。
+
+实测（同一网关、逐个模型）：
+
+```
+claude-sonnet-5-5-high    404 Requested entity was not found.
+claude-opus-5-5-high      404 Requested entity was not found.
+claude-sonnet-4-6         429（模型存在，仅额度问题）
+claude-opus-4-6-thinking  429（模型存在，仅额度问题）
+gemini-3.8-flash-high     429 / 200
+```
+
+**判据**：**404 = 该账号没有这个模型**（订阅层级问题，与额度无关）；**429 = 模型存在但额度耗尽**。
+⇒ 看到 404 不要去查额度，先查订阅层级。
+
+⚠️ **4.6 系官方标注 2026-11-02 下线**。到期前二选一：① 把号升级为**非试用** Google AI Pro 以解锁 5.5；② 全量切到 `gemini-3.8-flash-high`。
 
 ---
 
@@ -68,8 +96,8 @@
 | `gemini-3-flash` / `gemini-3.1-flash-lite` | Gemini | Gemini 池 | ✅ |
 | `gemini-3.1-pro-low` / `gemini-pro-agent` | Gemini | Gemini 池 | ✅ |
 | `gemini-3.1-flash-image` | Gemini | Gemini 池 | 生图，未接客户端 |
-| `claude-sonnet-5-5-high` | 第三方 | Claude/GPT 池 | ✅ **omp / pi / opencode 默认主力**，思考档 medium；用量耗尽 fallback 至 Gemini |
-| `claude-opus-5-5-high` | 第三方 | Claude/GPT 池 | ✅ 可用，omp slow 角色；思考档 medium |
+| `claude-sonnet-4-6` | 第三方 | Claude/GPT 池 | ✅ **omp / pi / opencode 默认主力**；用量耗尽 fallback 至 Gemini。官方 2026-11-02 下线 |
+| `claude-opus-4-6-thinking` | 第三方 | Claude/GPT 池 | ✅ 可用，omp `slow` 角色。官方 2026-11-02 下线 |
 | `gpt-oss-120b-medium` | 第三方 | Claude/GPT 池 | ✅ 实测 200 |
 
 > 官方依据：Antigravity 面板把额度分成 **"Gemini Models"** 与 **"Claude and GPT models"** 两条独立额度条（各含周额度 + 5 小时窗口）——这就是"Gemini 额度远大于 Claude"的出处。
@@ -321,14 +349,14 @@ grep -A4 '^routing:' /opt/cpa/config.yaml
 ### 2.9 客户端切换 / 回滚模型
 
 ```bash
-# 当前口径（2026-10-06 起）：
-#   omp:      ~/.omp/agent/config.yml       → modelRoles.default: antigravity/claude-sonnet-5-5-high:medium（fallback 至 gemini-3.8-flash-high:medium）
-#   pi:       ~/.pi/agent/settings.json     → defaultProvider: antigravity, defaultModel: claude-sonnet-5-5-high, defaultThinkingLevel: medium（fallback 至 gemini-3.8-flash-high:medium）
+# 当前口径（2026-10-06 修订，Claude 系用 4.6）：
+#   omp:      ~/.omp/agent/config.yml       → modelRoles.default: antigravity/claude-sonnet-4-6（fallback 至 gemini-3.8-flash-high:medium）
+#   pi:       ~/.pi/agent/settings.json     → defaultProvider: antigravity, defaultModel: claude-sonnet-4-6, defaultThinkingLevel: medium（fallback 至 gemini-3.8-flash-high:medium）
 #   hermes:   ~/.hermes/config.yaml         → model.default: gemini-3.8-flash-high（直接走 Gemini 池，不设 thinking）
-#   opencode: ~/.config/opencode/opencode.jsonc → "model": "antigravity/claude-sonnet-5-5-high"（fallback: gemini-3.8-flash-high:medium）
+#   opencode: ~/.config/opencode/opencode.jsonc → "model": "antigravity/claude-sonnet-4-6"（fallback: gemini-3.8-flash-high:medium）
 #
 # 一条命令切换（Git bash）：
-#   omp  → claude： sed -i 's|default: antigravity/[^ ]*|default: antigravity/claude-sonnet-5-5-high:medium|' ~/.omp/agent/config.yml
+#   omp  → claude： sed -i 's|default: antigravity/[^ ]*|default: antigravity/claude-sonnet-4-6|' ~/.omp/agent/config.yml
 #   pi   → gemini： sed -i 's|"defaultModel": "[^"]*"|"defaultModel": "gemini-3.8-flash-high"|'        ~/.pi/agent/settings.json
 #   oc   → gemini： sed -i 's|"model": "antigravity/[^"]*"|"model": "antigravity/gemini-3.8-flash-high"|' ~/.config/opencode/opencode.jsonc
 # 单会话临时切换不写配置：omp/pi 里 /model，opencode 里 /models
@@ -493,8 +521,8 @@ providers:
       - { id: gemini-3.7-flash-high, name: "Gemini 3.7 Flash High (Antigravity 反代)", reasoning: true, input: [text, image], contextWindow: 1000000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
       - { id: gemini-3-flash,        name: "Gemini 3 Flash (Antigravity 反代)",        reasoning: true, input: [text, image], contextWindow: 1000000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
       - { id: gemini-3.1-pro-low,    name: "Gemini 3.1 Pro Low (Antigravity 反代)",    reasoning: true, input: [text, image], contextWindow: 1000000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
-      - { id: claude-sonnet-5-5-high, name: "Claude Sonnet 5.5 (Antigravity 反代)", reasoning: true, input: [text, image], contextWindow: 200000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
-      - { id: claude-opus-5-5-high,   name: "Claude Opus 5.5 (Antigravity 反代)",   reasoning: true, input: [text, image], contextWindow: 200000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+      - { id: claude-sonnet-4-6,     name: "Claude Sonnet 4.6 (Antigravity 反代)",     input: [text, image], contextWindow: 200000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+      - { id: claude-opus-4-6-thinking, name: "Claude Opus 4.6 Thinking (Antigravity 反代)", input: [text, image], contextWindow: 200000, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
       - { id: gpt-oss-120b-medium,   name: "GPT-OSS 120B Medium (Antigravity 反代)",   reasoning: true, input: [text], contextWindow: 131072, maxTokens: 32000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
 ```
 
@@ -513,17 +541,17 @@ providers:
 
 ```yaml
 modelRoles:
-  default: antigravity/claude-sonnet-5-5-high:medium   # 主力（Claude 池，指定 medium 档位）
-  slow:    antigravity/claude-opus-5-5-high:medium     # 规划/复杂任务（Opus 5.5，指定 medium 档位）
-  smol:    antigravity/claude-sonnet-5-5-high:low      # 轻量
-  tiny:    antigravity/claude-sonnet-5-5-high:minimal  # 标题/记忆/auto 分类
+  default: antigravity/claude-sonnet-4-6          # 主力（Claude 池；思考档由 defaultThinkingLevel 控制）
+  slow:    antigravity/claude-opus-4-6-thinking   # 规划/复杂任务（Opus 4.6）
+  smol:    antigravity/claude-sonnet-4-6          # 轻量
+  tiny:    antigravity/claude-sonnet-4-6          # 标题/记忆/auto 分类
 defaultThinkingLevel: medium                      # 明确 medium；用 auto 会额外触发分类调用
 retry:
   modelFallback: true            # 通道失败（429/配额墙/供应商故障）自动降级
   fallbackRevertPolicy: cooldown-expiry   # 冷却结束自动切回主力
   fallbackChains:
     default:                     # 任何未单独配链的角色都继承这条
-      - antigravity/claude-sonnet-5-5-high:medium
+      - antigravity/claude-sonnet-4-6
       - antigravity/gemini-3.8-flash-high:medium
 ```
 
@@ -568,8 +596,8 @@ omp -p --no-session --mode json "hi" | grep -o '"model":"[^"]*"'
         { "id": "gemini-3.7-flash-high", "name": "Gemini 3.7 Flash High (Antigravity 反代)", "reasoning": true, "input": ["text","image"], "contextWindow": 250000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
         { "id": "gemini-3-flash",        "name": "Gemini 3 Flash (Antigravity 反代)",        "reasoning": true, "input": ["text","image"], "contextWindow": 250000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
         { "id": "gemini-3.1-pro-low",    "name": "Gemini 3.1 Pro Low (Antigravity 反代)",    "reasoning": true, "input": ["text","image"], "contextWindow": 250000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
-        { "id": "claude-sonnet-5-5-high", "name": "Claude Sonnet 5.5 (Antigravity 反代)", "reasoning": true, "input": ["text","image"], "contextWindow": 200000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
-        { "id": "claude-opus-5-5-high",   "name": "Claude Opus 5.5 (Antigravity 反代)",   "reasoning": true, "input": ["text","image"], "contextWindow": 200000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
+        { "id": "claude-sonnet-4-6",     "name": "Claude Sonnet 4.6 (Antigravity 反代)", "input": ["text","image"], "contextWindow": 200000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
+        { "id": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 Thinking (Antigravity 反代)", "input": ["text","image"], "contextWindow": 200000, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} },
         { "id": "gpt-oss-120b-medium",   "name": "GPT-OSS 120B Medium (Antigravity 反代)", "reasoning": true, "input": ["text"], "contextWindow": 131072, "maxTokens": 32000, "cost": {"input":0,"output":0,"cacheRead":0,"cacheWrite":0} }
       ]
     }
@@ -583,7 +611,7 @@ omp -p --no-session --mode json "hi" | grep -o '"model":"[^"]*"'
 
 ```json
 "defaultProvider": "antigravity",
-"defaultModel": "claude-sonnet-5-5-high",
+"defaultModel": "claude-sonnet-4-6",
 "defaultThinkingLevel": "medium",
 // fallback: 额度耗尽时在会话内切换至 gemini-3.8-flash-high:medium
 ```
@@ -609,7 +637,7 @@ pi -p --no-session --mode json "hi" | grep -o '"model":"[^"]*"'
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "antigravity/claude-sonnet-5-5-high",   // 默认主力；额度耗尽手动切 gemini-3.8-flash-high:medium
+  "model": "antigravity/claude-sonnet-4-6",   // 默认主力；额度耗尽手动切 gemini-3.8-flash-high:medium
   "provider": {
     "antigravity": {
       "npm": "@ai-sdk/openai-compatible",
@@ -623,8 +651,8 @@ pi -p --no-session --mode json "hi" | grep -o '"model":"[^"]*"'
         "gemini-3.7-flash-high": { "name": "Gemini 3.7 Flash High (Antigravity 反代)", "reasoning": true, "limit": { "context": 250000, "output": 32000 } },
         "gemini-3-flash":        { "name": "Gemini 3 Flash (Antigravity 反代)",        "reasoning": true, "limit": { "context": 250000, "output": 32000 } },
         "gemini-3.1-pro-low":    { "name": "Gemini 3.1 Pro Low (Antigravity 反代)",    "reasoning": true, "limit": { "context": 250000, "output": 32000 } },
-        "claude-sonnet-5-5-high": { "name": "Claude Sonnet 5.5 (Antigravity 反代)", "reasoning": true, "limit": { "context": 200000, "output": 32000 } },
-        "claude-opus-5-5-high":   { "name": "Claude Opus 5.5 (Antigravity 反代)",   "reasoning": true, "limit": { "context": 200000, "output": 32000 } },
+        "claude-sonnet-4-6":     { "name": "Claude Sonnet 4.6 (Antigravity 反代)", "limit": { "context": 200000, "output": 32000 } },
+        "claude-opus-4-6-thinking": { "name": "Claude Opus 4.6 Thinking (Antigravity 反代)", "limit": { "context": 200000, "output": 32000 } },
         "gpt-oss-120b-medium":   { "name": "GPT-OSS 120B Medium (Antigravity 反代)", "reasoning": true, "limit": { "context": 131072, "output": 32000 } }
       }
     }
@@ -636,7 +664,7 @@ pi -p --no-session --mode json "hi" | grep -o '"model":"[^"]*"'
 
 ```bash
 opencode models antigravity
-opencode run "Reply with exactly: OC-OK"        # 顶部应显示 · claude-sonnet-5-5-high
+opencode run "Reply with exactly: OC-OK"        # 顶部应显示 · claude-sonnet-4-6
 ```
 
 ⚠️ 两个已知点（2026-09-22 实测）：
@@ -679,7 +707,7 @@ Windows 下 `~` = `%USERPROFILE%`。改配置**不影响已运行的会话**：o
 ## 7. 给 Agent 的任务书（整段复制）
 
 ```
-任务：把本机 <omp|pi|opencode> 接入 Antigravity 反代网关，默认模型 claude-sonnet-5-5-high（用量耗尽自动 fallback 至 gemini-3.8-flash-high:medium）；hermes 默认 gemini-3.8-flash-high。
+任务：把本机 <omp|pi|opencode> 接入 Antigravity 反代网关，默认模型 claude-sonnet-4-6（用量耗尽自动 fallback 至 gemini-3.8-flash-high:medium）；hermes 默认 gemini-3.8-flash-high。
 
 已知事实（直接采用，不要重新探测）：
 - Base URL: http://155.254.60.38/v1（OpenAI 兼容，无需鉴权，apiKey 用占位符 antigravity-gateway）
@@ -691,8 +719,9 @@ Windows 下 `~` = `%USERPROFILE%`。改配置**不影响已运行的会话**：o
   网关管理密钥用 `/root/cpa/account.sh key` 打印（**不要写死 `admin`，它已失效**）
 - 账号池：**9 个 auth（2026-10-06 更新）**；3 个新号满血可用，旧号 5h 窗口耗尽中待恢复；`max-retry-credentials: 5`（请求失败最多轮试 5 个账号）
 - 路由：`round-robin` + `session-affinity: false`（按请求轮询）；同一会话上下文会轮流落号 → 长会话更费额度，属预期（§2.6）
-- 只准配置这些模型：claude-sonnet-5-5-high（**omp/pi/opencode 默认**）/ gemini-3.8-flash-high（**hermes 默认 / fallback 目标**）/
-  gemini-3.7-flash-high / gemini-3-flash / gemini-3.1-pro-low / claude-opus-5-5-high / gpt-oss-120b-medium
+- 只准配置这些模型：claude-sonnet-4-6（**omp/pi/opencode 默认**）/ gemini-3.8-flash-high（**hermes 默认 / fallback 目标**）/
+  gemini-3.7-flash-high / gemini-3-flash / gemini-3.1-pro-low / claude-opus-4-6-thinking / gpt-oss-120b-medium
+- ⚠️ **不要配置 claude-sonnet-5-5-high / claude-opus-5-5-high**：本批号是 Pro 试用，5.5 系返回 404（§0.2）
 - claude / gpt-oss 与 gemini 走**不同额度池**，任一池临时 429 属正常，不要改路由去"修"（加号才是解）
 - 严禁把面板端口当模型端点（chat 会 404）；**malaysia 只监听 :80**，模型端点就是 `http://155.254.60.38/v1`
 
@@ -795,7 +824,7 @@ omp -p --no-session --model antigravity/gemini-3.8-flash-high "hi"      # 单模
 
 | 通道 | 承载模型 | 配额来源 | 定位 |
 |---|---|---|---|
-| antigravity · **Claude/GPT 池** | `claude-sonnet-5-5-high`、`claude-opus-5-5-high`、`gpt-oss-120b-medium` | 账号的 "Claude and GPT models" 额度条 | **omp / pi / opencode 主力**（default / slow / smol） |
+| antigravity · **Claude/GPT 池** | `claude-sonnet-4-6`、`claude-opus-4-6-thinking`、`gpt-oss-120b-medium` | 账号的 "Claude and GPT models" 额度条 | **omp / pi / opencode 主力**（default / slow / smol） |
 | antigravity · **Gemini 池** | `gemini-3.8-flash-high`、`-3.7-`、`-3-`、`-3.1-pro-low` | 账号的 "Gemini Models" 额度条（独立，额度更大） | **hermes 默认**；omp/pi/opencode Claude 池耗尽时的 **fallback 目标** |
 
 > **两个额度条互相独立**：一条打干时另一条常仍可用（实测 Claude 430 时 Gemini 仍 200，反之亦然）。看到 429 先换**族**，别急着改配置。
@@ -839,7 +868,7 @@ omp -p --no-session "hi"                                    # 端到端（会自
 | 缺口 | 影响 | 状态 / 补法 |
 |---|---|---|
 | **可用号 9 个（原帖 15–24）** | 单号 5 小时窗口 → 长会话仍可能周期性 429；按原帖建议还需再加 6–11 个 | ⏳ **部分缓解**。已从 6 扩至 9（2026-10-06），目标 15+；`import-cards.sh` 就绪随时批量导入 |
-| ~~无 CPA-Manager-Plus 面板~~ | 缺 OAuth 网页补录、5h 滑动额度条 / 7 天配额 / 频次可视化 | ✅ **2026-09-27 已部署**：v1.14.1 原生二进制（**无需 docker**）→ `http://155.254.60.38:18317/management.html`，已完成首配，可读 4 个账号（§12） |
+| ~~无 CPA-Manager-Plus 面板~~ | 缺 OAuth 网页补录、5h 滑动额度条 / 7 天配额 / 频次可视化 | ✅ **2026-09-27 已部署**：v1.14.1 原生二进制（**无需 docker**）→ `http://155.254.60.38:18317/management.html`，已完成首配（§12） |
 | ~~缺批量卡密导入~~ | 卡密 `用户名----密码----2FA密钥----RT`，20 个号手工就是苦力 | ✅ **已实现** `import-cards.sh`：解析 → 写 auth → 逐个定向验证 → 失败自动 disable → 卡密台账（600）；已用合成卡密端到端跑通（§12） |
 | ~~出口自愈 watchdog 缺失~~ | 隧道死了但端口仍监听时 haproxy 照样分流 → 请求进黑洞 | ✅ **已重建并演练**：`warp-watchdog.timer` + `hap-api.py` + admin socket；演练中"假后端"被自动摘除，聚合口从 2/6 恢复到 6/6（§2.5） |
 | ~~管理密钥弱~~ | 旧 `Bearer admin` + `allow-remote: true` = 外网可拉 OAuth 文件 | ✅ **已轮换**为 32 位随机密钥（`/root/cpa/mgmt.key`，旧口令实测 401）。⏳ **仍待办**：管理 API（:80）与面板（:18317）依然公网可达 → 建议只放行自己的出口 IP 或改为 SSH 隧道访问 |
@@ -919,3 +948,50 @@ for u in cli-proxy-api cpa-manager-plus haproxy warp-proxy@1 warp-proxy@2 \
 bash /root/cpa/account.sh list
 python3 /usr/local/bin/hap-api.py 'show stat' | awk -F, '$1=="warp-socks"{print $2,$18}'
 ```
+
+
+### 12.4 Refresh Token（RT）体检与失效处置
+
+**RT 的用法**（Google OAuth 2.0 官方机制）—— 拿 RT 去 token 端点换取新的 `access_token`：
+
+```http
+POST https://oauth2.googleapis.com/token
+client_id=<签发该 RT 的 OAuth client>
+client_secret=<同一 client 的密钥>
+refresh_token=1//0...
+grant_type=refresh_token
+```
+
+四条实测要点：
+
+| 规则 | 说明 |
+|---|---|
+| **RT 绑定签发它的 OAuth client** | 用别的 client 去换 → `invalid_grant`（"RT 没坏却用不了"的头号原因） |
+| **必须 `access_type=offline`** | 授权时才下发 RT |
+| **刷新不轮换** | 本池实测 7 个号全部 `no_rotation` ⇒ **重复导入同一 RT 不会互相作废** |
+| **可被作废** | 卖家再次登录 / 改密 / 风控拦截都会让 RT 立即失效 |
+
+网关内置的 Antigravity OAuth client：
+
+```
+1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com
+```
+
+**一键体检**（逐个直连 Google 校验池内全部 RT，输出 live / dead）：
+
+```bash
+python3 /root/rt_audit.py
+```
+
+**失效特征**：错误文本是 `"Bad Request"`，而**不是** `"Token has been expired or revoked"` ⇒ 该 RT 已被作废或不属于此 client，**服务器侧无解**。
+
+**处置流程**：
+
+```bash
+python3 /root/rt_audit.py                       # 1) 找出 dead 的号
+bash /root/cpa/account.sh disable <email>       # 2) 先停用，避免每轮重试白撞活号
+# 3) 面板 →「OAuth 登录」→ Antigravity OAuth，用浏览器登录该号（2FA 密钥贴 2fa.show 取码）
+bash /root/cpa/account.sh enable <email>        # 4) 补录完成后重新启用
+```
+
+**2026-10-06 审计结果**：9 号中 **7 live / 2 dead** —— `katesmith3181@gmail.com`、`jamesthompson5969@gmail.com` 的 RT 已作废，并已 `disable`。

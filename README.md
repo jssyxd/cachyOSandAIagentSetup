@@ -25,15 +25,18 @@
 ### 1. 网关与服务现状 (2026-10-06 最新)
 - **主网关地址**：`http://155.254.60.38/v1`（Malaysia Debian 12，多出口 Cloudflare WARP 聚合，原生 systemd 监听 `:80`）
 - **韩国服务器状态**：原韩国服务器（`168.93.224.18`）已**永久退役**，所有客户端严禁再连接旧地址。
-- **账号池规模**：已扩充至 **9 个账号**，`max-retry-credentials: 5`（单次请求自动轮询重试最多 5 个账号）。
+- **账号池规模**：**9 个账号**（7 个 RT 存活 + 2 个 RT 已作废并 disable），`max-retry-credentials: 5`（单次请求自动轮询重试最多 5 个账号）。可用 RT 体检：`python3 /root/rt_audit.py`（见 CLIENT-SETUP §12.4）。
 
 ### 2. 各 Agent 默认模型规范
 | Agent 客户端 | 默认主力模型 | 思考档位 (Thinking) | 额度耗尽 Fallback 降级策略 |
 | :--- | :--- | :--- | :--- |
-| **omp (oh-my-pi)** | `antigravity/claude-sonnet-5-5-high` | `medium` | 自动 fallback 至 `gemini-3.8-flash-high:medium` |
-| **pi (coding agent)** | `antigravity/claude-sonnet-5-5-high` | `medium` | 降级至 `gemini-3.8-flash-high:medium` |
-| **OpenCode** | `antigravity/claude-sonnet-5-5-high` | `medium` | 降级至 `gemini-3.8-flash-high:medium` |
+| **omp (oh-my-pi)** | `antigravity/claude-sonnet-4-6` | `medium`（全局 `defaultThinkingLevel`） | 自动 fallback 至 `gemini-3.8-flash-high:medium` |
+| **pi (coding agent)** | `antigravity/claude-sonnet-4-6` | `medium` | 降级至 `gemini-3.8-flash-high:medium` |
+| **OpenCode** | `antigravity/claude-sonnet-4-6` | `medium` | 降级至 `gemini-3.8-flash-high:medium` |
 | **Hermes** | `antigravity/gemini-3.8-flash-high` | 不启用 / 默认 | 直接走 Gemini 独立额度池，稳定高并发 |
+
+> ⚠️ **不要配置 `claude-sonnet-5-5-high` / `claude-opus-5-5-high`** —— 官方规定 5.5 系仅对 **非试用** Google AI Pro 开放；当前号池为 Pro 试用，请求会返回 **404**（详见 CLIENT-SETUP §0.2）。
+> ⚠️ Claude 4.6 系官方标注 **2026-11-02 下线**，到期前需升级订阅或全量切换到 `gemini-3.8-flash-high`。
 
 ### 3. 配置细节与任务书
 完整配置步骤、各 Agent 配置文件路径、防爆配额上下文压缩阈值（20万 Token）、故障排查及直接复制的 Agent 任务书，详见：
